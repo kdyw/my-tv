@@ -1,6 +1,5 @@
 name: build
 
-# 修改触发条件：只要有代码提交(push)或者是手动触发(workflow_dispatch)就运行
 on:
   push:
     branches: [ "main", "master" ]
@@ -16,44 +15,24 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 核心修复步骤：强制设置 JDK 17
+      # 1. 设置 JDK 17 (解决报错的关键)
       - name: set up JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      # 赋予 gradlew 执行权限（防止有时提示权限不足）
+      # 2. 赋予执行权限
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      # 开始编译
-      # 使用 assembleRelease 生成 release 包
+      # 3. 编译 Debug 包 (建议小白使用 Debug 包，不用配置签名也能安装)
       - name: Run build with Gradle wrapper
-        run: ./gradlew assembleRelease -PIS_SO_BUILD=false
+        run: ./gradlew assembleDebug -PIS_SO_BUILD=false
 
-      # 签名 APK (如果你没有配置密钥，这一步可能会失败，或者只能生成未签名的包)
-      # 如果你是代码小白，且没有配置 GitHub Secrets 里的密钥，建议先注释掉后面签名的步骤，
-      # 或者只生成 debug 包 (./gradlew assembleDebug)
-      # 这里为了保证流程跑通，我保留了你原文件的逻辑，但如果你遇到签名错误，可能需要调整。
-      
-      - name: Sign app APK
-        # 只有当密钥存在时才执行签名，防止报错
-        if: ${{ secrets.KEYSTORE != '' }}
-        id: sign_app
-        uses: r0adkll/sign-android-release@v1
-        with:
-          releaseDirectory: app/build/outputs/apk/release
-          alias: ${{ secrets.ALIAS }}
-          signingKeyBase64: ${{ secrets.KEYSTORE }}
-          keyStorePassword: ${{ secrets.KEYSTORE_PASSWORD }}
-          keyPassword: ${{ secrets.ALIAS_PASSWORD }}
-        env:
-          BUILD_TOOLS_VERSION: "34.0.0"
-
-      # 上传编译好的 APK 到 GitHub Actions 的 Artifacts 区域供你下载
+      # 4. 上传 APK 供下载
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: my-tv-app
-          path: app/build/outputs/apk/release/*.apk
+          path: app/build/outputs/apk/debug/*.apk
