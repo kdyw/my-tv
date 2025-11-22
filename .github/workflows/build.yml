@@ -1,9 +1,10 @@
 name: build
 
+# 修改触发条件：只要有代码提交(push)或者是手动触发(workflow_dispatch)就运行
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [ "main", "master" ]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -15,16 +16,30 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # 核心修复步骤：强制设置 JDK 17
       - name: set up JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
+      # 赋予 gradlew 执行权限（防止有时提示权限不足）
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      # 开始编译
+      # 使用 assembleRelease 生成 release 包
       - name: Run build with Gradle wrapper
         run: ./gradlew assembleRelease -PIS_SO_BUILD=false
 
+      # 签名 APK (如果你没有配置密钥，这一步可能会失败，或者只能生成未签名的包)
+      # 如果你是代码小白，且没有配置 GitHub Secrets 里的密钥，建议先注释掉后面签名的步骤，
+      # 或者只生成 debug 包 (./gradlew assembleDebug)
+      # 这里为了保证流程跑通，我保留了你原文件的逻辑，但如果你遇到签名错误，可能需要调整。
+      
       - name: Sign app APK
+        # 只有当密钥存在时才执行签名，防止报错
+        if: ${{ secrets.KEYSTORE != '' }}
         id: sign_app
         uses: r0adkll/sign-android-release@v1
         with:
@@ -34,49 +49,11 @@ jobs:
           keyStorePassword: ${{ secrets.KEYSTORE_PASSWORD }}
           keyPassword: ${{ secrets.ALIAS_PASSWORD }}
         env:
-          # override default build-tools version (29.0.3) -- optional
           BUILD_TOOLS_VERSION: "34.0.0"
 
-      - name: Get History
-        id: get_history
-        run: |
-          chmod +x history.sh
-          output=$(./history.sh)
-          echo "$output" > history.md
-
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # 上传编译好的 APK 到 GitHub Actions 的 Artifacts 区域供你下载
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: ${{ github.ref }}
-          release_name: Release ${{ github.ref }}
-          draft: false
-          prerelease: false
-          body_path: history.md
-
-      - name: Upload Release Asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ${{ steps.sign_app.outputs.signedReleaseFile }}
-          asset_name: my-tv-${{ github.ref_name }}.apk
-          asset_content_type: application/vnd.android.package-archive
-
-      - name: Gitee Create Release
-        run: |
-          latest_commit=$(git rev-parse HEAD)
-          history=$(cat history.md)
-          curl -v POST https://gitee.com/api/v5/repos/${{ github.repository }}/releases \
-          -H "Content-Type: application/json" \
-          -d '{
-            "access_token": "${{ secrets.GITEE_ACCESS_TOKEN}}",
-            "tag_name": "${{ github.ref_name }}",
-            "name": "Release ${{ github.ref_name }}",
-            "body": "'"$history"'",
-            "prerelease": false,
-            "target_commitish": "'"$latest_commit"'"
-          }'
+          name: my-tv-app
+          path: app/build/outputs/apk/release/*.apk
