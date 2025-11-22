@@ -1,7 +1,10 @@
 package com.lizongying.mytv
 
+import android.content.Context
 import android.content.res.Resources
 import android.os.Build
+import android.provider.Settings
+import android.util.Base64
 import android.util.TypedValue
 import com.google.gson.Gson
 import com.lizongying.mytv.api.TimeResponse
@@ -9,8 +12,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.text.SimpleDateFormat
+import java.util.Arrays
 import java.util.Date
 import java.util.Locale
+import javax.crypto.Cipher
+import javax.crypto.spec.IvParameterSpec
+import javax.crypto.spec.SecretKeySpec
 
 object Utils {
     private var between: Long = 0
@@ -88,4 +95,45 @@ object Utils {
     }
 
     fun isTmallDevice() = Build.MANUFACTURER.equals("Tmall", ignoreCase = true)
+
+    // --- 新增：获取设备唯一ID ---
+    fun getDeviceId(context: Context): String {
+        return Settings.Secure.getString(
+            context.contentResolver,
+            Settings.Secure.ANDROID_ID
+        ) ?: "UNKNOWN_ID"
+    }
+
+    // --- 新增：AES解密方法 ---
+    fun decryptData(encryptedStr: String): String {
+        // 这是从你的 app_configpub.php 获取的 AES Key
+        val key = "82765ed657584b3202ec7667ff233fa945f48f7920781180614c794cdc489b83"
+        
+        try {
+            var target = encryptedStr
+            // 去除可能的前缀
+            if (target.startsWith("ENC:")) {
+                target = target.substring(4)
+            }
+            
+            val cipherData = Base64.decode(target, Base64.DEFAULT)
+            // 长度校验
+            if (cipherData.size < 17) return ""
+
+            // 提取 IV (前16字节) 和 密文
+            val iv = Arrays.copyOfRange(cipherData, 0, 16)
+            val cipherBytes = Arrays.copyOfRange(cipherData, 16, cipherData.size)
+
+            val secretKey = SecretKeySpec(key.toByteArray(Charsets.UTF_8), "AES")
+            val ivSpec = IvParameterSpec(iv)
+            
+            val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
+            cipher.init(Cipher.DECRYPT_MODE, secretKey, ivSpec)
+            
+            return String(cipher.doFinal(cipherBytes))
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return ""
+        }
+    }
 }
